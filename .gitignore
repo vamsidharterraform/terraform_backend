@@ -1,0 +1,183 @@
+# ============================================================
+# Terraform
+# ============================================================
+
+# Terraform working directory
+.terraform/
+
+# Terraform state files
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform crash logs
+crash.log
+crash.*.log
+
+# Terraform plan files
+*.tfplan
+*.plan
+
+# Terraform override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform CLI configuration
+.terraformrc
+terraform.rc
+
+
+# ============================================================
+# Terraform Variable Files
+# ============================================================
+
+# Ignore all variable files by default
+*.tfvars
+*.tfvars.json
+
+# ============================================================
+# IMPORTANT:
+# If you want to commit your environment tfvars files,
+# uncomment the following lines.
+# ============================================================
+
+!dev/terraform.tfvars
+!test/terraform.tfvars
+
+
+# ============================================================
+# Secrets / Credentials
+# ============================================================
+
+# AWS credentials
+.aws/
+.aws/credentials
+.aws/config
+
+# Environment files
+.env
+.env.*
+*.env
+
+# Private keys / certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+
+# SSH keys
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
+
+# ============================================================
+# AWS / Cloud Credentials
+# ============================================================
+
+credentials
+credentials.*
+aws-credentials
+aws-credentials.*
+
+
+# ============================================================
+# Terraform Provider / Plugin Files
+# ============================================================
+
+# Terraform provider binaries
+terraform-provider-*
+
+# Terraform CLI lock file
+# DO NOT ignore this file in normal Terraform repositories.
+# It should be committed to Git.
+#
+# Therefore, this is intentionally NOT ignored:
+# .terraform.lock.hcl
+
+
+# ============================================================
+# IDE / Editor Files
+# ============================================================
+
+# VS Code
+.vscode/
+
+# IntelliJ / IDEA
+.idea/
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Vim
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+
+# ============================================================
+# Logs
+# ============================================================
+
+*.log
+logs/
+log/
+
+
+# ============================================================
+# Temporary Files
+# ============================================================
+
+*.tmp
+*.temp
+*.bak
+*.backup
+*~
+.#*
+*.swp
+
+
+# ============================================================
+# OS / File System
+# ============================================================
+
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+
+# ============================================================
+# Terraform Generated Files
+# ============================================================
+
+terraform.tfstate.d/
+
+
+# ============================================================
+# Local Terraform Files
+# ============================================================
+
+.terraform-version
+
+# If you use tfenv and want to keep the version file,
+# remove the line above.
