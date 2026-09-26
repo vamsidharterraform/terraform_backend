@@ -1,5 +1,5 @@
 module "s3module" {
-  source = "git::https://github.com/vamsidharterraform/terraform-s3.git?ref=v1.0.0"
+  source = "git::https://github.com/vamsidharterraform/s3module.git//s3?ref=main"
 
   bucket_name = var.bucket_name
   environment = var.environment

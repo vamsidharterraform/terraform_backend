@@ -1,167 +1,576 @@
-# Terraform Backend Module
+# Terraform Backend Infrastructure
 
-This Terraform module creates the AWS resources required for storing and locking Terraform remote state.
+This repository manages the Terraform backend infrastructure used by different environments.
 
-## Architecture
+The repository uses a **common Terraform configuration** at the root level and maintains environment-specific values in separate `dev` and `test` directories.
 
-```text
-Terraform
-    |
-    v
-terraform-backend module
-    |
-    +-------------------+
-    |                   |
-    v                   v
-   S3               DynamoDB
-    |                   |
-    |                   |
-Terraform State      State Lock
-```
-
-## Resources Created
-
-| Resource | Purpose |
-|---|---|
-| S3 Bucket | Stores the Terraform remote state file |
-| S3 Versioning | Maintains previous versions of the state file |
-| S3 Server-Side Encryption | Encrypts Terraform state using AES256 |
-| DynamoDB Table | Provides Terraform state locking |
-| S3 Bucket Tags | Identifies environment and ownership |
-| DynamoDB Tags | Identifies environment and ownership |
-
-## Module Structure
+## Repository Structure
 
 ```text
 terraform-backend/
+│
+├── .gitignore
+├── README.md
 ├── main.tf
+├── providers.tf
 ├── variables.tf
+├── locals.tf
 ├── outputs.tf
-└── README.md
+│
+├── dev/
+│   └── terraform.tfvars
+│
+└── test/
+    └── terraform.tfvars
 ```
 
-## Usage
+## Design
 
-Call the module from the root Terraform configuration:
+The Terraform configuration is common for all environments.
 
-```hcl
-module "terraform_backend" {
-  source = "./modules/terraform-backend"
+Only the environment-specific values are maintained separately.
 
-  bucket_name         = "vamsi-eks-terraform-state-usw2"
-  dynamodb_table_name = "terraform-eks-state-locks"
-  environment         = "dev"
-}
+```text
+                         terraform-backend
+                                │
+                   Common Terraform Configuration
+                                │
+          ┌─────────────────────┴─────────────────────┐
+          │                                           │
+         DEV                                         TEST
+          │                                           │
+ dev/terraform.tfvars                        test/terraform.tfvars
+          │                                           │
+          ▼                                           ▼
+      Dev S3 Bucket                              Test S3 Bucket
+      Dev DynamoDB                                Test DynamoDB
 ```
 
-## Variables
+## Common Terraform Files
 
-| Variable | Description | Type | Default |
-|---|---|---|---|
-| `bucket_name` | S3 bucket used to store Terraform state | `string` | Required |
-| `dynamodb_table_name` | DynamoDB table used for state locking | `string` | Required |
-| `environment` | Environment name | `string` | `dev` |
+The following files are maintained at the root level:
 
-## Outputs
+```text
+main.tf
+providers.tf
+variables.tf
+locals.tf
+outputs.tf
+```
 
-| Output | Description |
-|---|---|
-| `s3_bucket_name` | Name of the Terraform state S3 bucket |
-| `s3_bucket_arn` | ARN of the Terraform state S3 bucket |
-| `dynamodb_table_name` | Name of the state-locking DynamoDB table |
+These files contain the reusable Terraform configuration.
 
-## S3 Configuration
+### main.tf
 
-The S3 bucket has:
-
-- Versioning enabled
-- AES256 server-side encryption
-- Terraform state storage
-- Environment and management tags
+The `main.tf` file calls the reusable S3 module and creates the DynamoDB state-locking table.
 
 Example:
 
-```text
-S3 Bucket
-   |
-   +-- terraform.tfstate
-   +-- Previous state versions
-   +-- Server-side encryption
-```
-
-## DynamoDB Configuration
-
-The DynamoDB table is configured for Terraform state locking.
-
-```text
-Table: terraform-eks-state-locks
-
-Partition Key:
-LockID (String)
-```
-
-Terraform uses the lock to prevent multiple users or CI/CD pipelines from modifying the same state simultaneously.
-
-## Important Note
-
-The backend configuration itself cannot use Terraform module outputs.
-
-For example, this is not valid:
-
 ```hcl
-backend "s3" {
-  bucket = module.terraform_backend.s3_bucket_name
+module "s3module" {
+  source = "git::https://github.com/vamsidharterraform/terraform-s3.git?ref=v1.0.0"
+
+  bucket_name = var.bucket_name
+  environment = var.environment
+}
+
+resource "aws_dynamodb_table" "terraform_locks" {
+  name         = var.dynamodb_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+
+  tags = local.common_tags
 }
 ```
 
-The backend bucket must be specified directly during Terraform initialization.
+### providers.tf
 
-## Example Backend Configuration
+The AWS provider is configured at the root level.
 
 ```hcl
 terraform {
-  backend "s3" {
-    bucket         = "vamsi-eks-terraform-state-usw2"
-    key            = "eks/terraform.tfstate"
-    region         = "us-west-2"
-    dynamodb_table = "terraform-eks-state-locks"
-    encrypt        = true
+  required_version = ">= 1.6.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+
+  default_tags {
+    tags = {
+      Environment = var.environment
+      ManagedBy   = "Terraform"
+    }
   }
 }
 ```
 
-## Deployment
+### variables.tf
 
-Initialize Terraform:
+The variables required by the common Terraform configuration are defined here.
+
+```hcl
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+}
+
+variable "bucket_name" {
+  description = "Terraform state S3 bucket name"
+  type        = string
+}
+
+variable "dynamodb_table_name" {
+  description = "DynamoDB state locking table name"
+  type        = string
+}
+
+variable "environment" {
+  description = "Environment name"
+  type        = string
+}
+```
+
+### locals.tf
+
+Common tags used by resources created directly in the backend project are defined here.
+
+```hcl
+locals {
+  common_tags = {
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
+```
+
+The reusable S3 module has its own `locals.tf` because the module also adds the bucket name as the `Name` tag.
+
+### outputs.tf
+
+Example:
+
+```hcl
+output "s3_bucket_name" {
+  description = "Terraform state S3 bucket name"
+  value       = module.s3module.s3_bucket_name
+}
+
+output "s3_bucket_arn" {
+  description = "Terraform state S3 bucket ARN"
+  value       = module.s3module.s3_bucket_arn
+}
+
+output "dynamodb_table_name" {
+  description = "Terraform state locking DynamoDB table"
+  value       = aws_dynamodb_table.terraform_locks.name
+}
+```
+
+---
+
+# Environment-Specific Variables
+
+Environment-specific values are stored separately.
+
+## Dev
+
+```text
+dev/
+└── terraform.tfvars
+```
+
+Example:
+
+```hcl
+aws_region          = "us-west-2"
+environment         = "dev"
+bucket_name         = "vamsi-terraform-state-dev-usw2"
+dynamodb_table_name = "terraform-state-locks-dev"
+```
+
+## Test
+
+```text
+test/
+└── terraform.tfvars
+```
+
+Example:
+
+```hcl
+aws_region          = "us-west-2"
+environment         = "test"
+bucket_name         = "vamsi-terraform-state-test-usw2"
+dynamodb_table_name = "terraform-state-locks-test"
+```
+
+---
+
+# Terraform Initialization
+
+Terraform initialization is performed from the repository root.
+
+```bash
+cd terraform-backend
+```
+
+Run:
 
 ```bash
 terraform init
 ```
 
-Review the resources:
+`terraform init` downloads the required providers and reusable modules.
+
+The environment-specific `.tfvars` file does not normally need to be supplied during `terraform init`.
+
+---
+
+# Dev Deployment
+
+## 1. Initialize Terraform
 
 ```bash
-terraform plan
+terraform init
 ```
 
-Create the backend resources:
+## 2. Validate
 
 ```bash
-terraform apply
+terraform validate
 ```
 
-## Destroy
+## 3. Format
 
-The current module has:
+```bash
+terraform fmt -recursive
+```
+
+## 4. Create Dev Plan
+
+```bash
+terraform plan -var-file="dev/terraform.tfvars"
+```
+
+This loads the values from:
+
+```text
+dev/terraform.tfvars
+```
+
+Terraform then uses the common configuration from:
+
+```text
+main.tf
+providers.tf
+variables.tf
+locals.tf
+outputs.tf
+```
+
+## 5. Apply Dev
+
+```bash
+terraform apply -var-file="dev/terraform.tfvars"
+```
+
+Terraform will create the Dev backend resources.
+
+Example:
+
+```text
+S3
+└── vamsi-terraform-state-dev-usw2
+
+DynamoDB
+└── terraform-state-locks-dev
+```
+
+---
+
+# Test Deployment
+
+## 1. Create Test Plan
+
+```bash
+terraform plan -var-file="test/terraform.tfvars"
+```
+
+## 2. Apply Test
+
+```bash
+terraform apply -var-file="test/terraform.tfvars"
+```
+
+Terraform uses the same root-level Terraform configuration but loads the values from:
+
+```text
+test/terraform.tfvars
+```
+
+Example:
+
+```text
+S3
+└── vamsi-terraform-state-test-usw2
+
+DynamoDB
+└── terraform-state-locks-test
+```
+
+---
+
+# Complete Command Flow
+
+## Dev
+
+```bash
+cd terraform-backend
+
+terraform init
+
+terraform fmt -recursive
+
+terraform validate
+
+terraform plan -var-file="dev/terraform.tfvars"
+
+terraform apply -var-file="dev/terraform.tfvars"
+```
+
+## Test
+
+```bash
+cd terraform-backend
+
+terraform init
+
+terraform fmt -recursive
+
+terraform validate
+
+terraform plan -var-file="test/terraform.tfvars"
+
+terraform apply -var-file="test/terraform.tfvars"
+```
+
+---
+
+# Why `-var-file` Is Required
+
+Terraform automatically loads variable files only when they follow the automatic naming convention and are located in the current Terraform working directory.
+
+In this repository:
+
+```text
+terraform-backend/
+│
+├── main.tf
+├── variables.tf
+│
+├── dev/
+│   └── terraform.tfvars
+│
+└── test/
+    └── terraform.tfvars
+```
+
+Terraform does not automatically load:
+
+```text
+dev/terraform.tfvars
+```
+
+or:
+
+```text
+test/terraform.tfvars
+```
+
+when running Terraform from the root directory.
+
+Therefore, the appropriate file must be explicitly provided:
+
+```bash
+terraform plan -var-file="dev/terraform.tfvars"
+```
+
+or:
+
+```bash
+terraform plan -var-file="test/terraform.tfvars"
+```
+
+This ensures that the correct environment-specific values are used.
+
+---
+
+# Environment Isolation
+
+Although the Terraform code is common, the environment-specific values are different.
+
+```text
+                    Common Terraform Code
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+            DEV                         TEST
+             │                           │
+   dev/terraform.tfvars         test/terraform.tfvars
+             │                           │
+             ▼                           ▼
+       environment=dev             environment=test
+             │                           │
+             ▼                           ▼
+        Dev resources              Test resources
+```
+
+This allows the same Terraform implementation to be reused without duplicating infrastructure code.
+
+---
+
+# Important: Terraform State
+
+The backend infrastructure itself creates the resources that will later be used for Terraform state management.
+
+The S3 module creates the S3 bucket:
+
+```text
+S3
+└── Terraform State Storage
+```
+
+The backend project creates the DynamoDB table:
+
+```text
+DynamoDB
+└── Terraform State Locking
+```
+
+These resources are created before the other Terraform infrastructure uses them as its backend.
+
+For example, your future environment backend can use:
 
 ```hcl
-prevent_destroy = false
+terraform {
+  backend "s3" {
+    bucket         = "vamsi-terraform-state-dev-usw2"
+    key            = "dev/terraform.tfstate"
+    region         = "us-west-2"
+    dynamodb_table = "terraform-state-locks-dev"
+    encrypt        = true
+  }
+}
 ```
 
-Therefore, Terraform can destroy the S3 bucket if it is removed from the configuration.
+The Test environment can use a different state key/table:
 
-For a production Terraform state bucket, consider enabling deletion protection and following your organization's backup and recovery policy.
+```hcl
+terraform {
+  backend "s3" {
+    bucket         = "vamsi-terraform-state-test-usw2"
+    key            = "test/terraform.tfstate"
+    region         = "us-west-2"
+    dynamodb_table = "terraform-state-locks-test"
+    encrypt        = true
+  }
+}
+```
 
-## Interview Explanation
+> The backend resources must exist before another Terraform configuration can initialize against them.
 
-> "I created a reusable Terraform backend module that provisions an S3 bucket for remote Terraform state and a DynamoDB table for state locking. The S3 bucket has versioning and server-side encryption enabled. This allows multiple engineers or CI/CD pipelines to work with a centralized Terraform state while preventing concurrent state modifications."
+---
+
+# Resource Separation
+
+The backend project creates two types of resources.
+
+```text
+terraform-backend
+│
+├── Reusable S3 Module
+│   └── Terraform State S3 Bucket
+│
+└── Direct Terraform Resource
+    └── DynamoDB State Locking Table
+```
+
+The reusable S3 module is maintained in a separate repository:
+
+```text
+terraform-s3
+```
+
+and consumed using:
+
+```hcl
+module "s3module" {
+  source = "git::https://github.com/vamsidharterraform/terraform-s3.git?ref=v1.0.0"
+}
+```
+
+This allows the S3 module to be independently versioned and reused.
+
+---
+
+# Best Practices
+
+- Keep reusable infrastructure in separate Terraform modules.
+- Keep environment-specific values in separate `.tfvars` files.
+- Use Git tags to version Terraform modules.
+- Do not hard-code environment-specific values in reusable modules.
+- Do not store AWS credentials in Terraform files.
+- Do not store secrets in committed `.tfvars` files.
+- Commit `.terraform.lock.hcl` to Git.
+- Review `terraform plan` before every `terraform apply`.
+- Use separate state for different environments.
+- Keep Terraform backend infrastructure separate from application infrastructure.
+
+---
+
+# Summary
+
+The repository follows this model:
+
+```text
+terraform-backend
+│
+├── Common Terraform Code
+│   ├── main.tf
+│   ├── providers.tf
+│   ├── variables.tf
+│   ├── locals.tf
+│   └── outputs.tf
+│
+├── dev
+│   └── terraform.tfvars
+│
+└── test
+    └── terraform.tfvars
+```
+
+The same Terraform code is used for both environments.
+
+Only the variable file changes:
+
+```bash
+# Dev
+terraform plan -var-file="dev/terraform.tfvars"
+
+# Test
+terraform plan -var-file="test/terraform.tfvars"
+```
+
+This provides a simple and reusable environment-management pattern while avoiding duplication of the Terraform implementation.
