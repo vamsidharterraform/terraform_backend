@@ -1,11 +1,11 @@
 output "s3_bucket_name" {
   description = "Terraform state S3 bucket name"
-  value       = aws_s3_bucket.terraform_state.id
+  value       = module.s3module.s3_bucket_name
 }
 
 output "s3_bucket_arn" {
   description = "Terraform state S3 bucket ARN"
-  value       = aws_s3_bucket.terraform_state.arn
+  value       = module.s3module.s3_bucket_arn
 }
 
 output "dynamodb_table_name" {
